@@ -122,8 +122,12 @@ public class ParseImport {
 
 		/* get rid of the @# stuff at the end */
 		parse = function.split("\\@");
-		if (parse.length == 2)
+		if (parse.length == 2) {
 			function = parse[0];
+			if(!module.isEmpty() && function.charAt(0) == '_'){
+				function = function.substring(1);
+			}
+		}
 
 		valid = true;
 	}
