@@ -1,0 +1,25 @@
+# Build outputs
+bin/
+build/
+
+# Demo build outputs
+demo/*.o
+demo/*.dll
+demo/*.exe
+demo/*.bin
+
+# IDE files
+.idea/
+*.iml
+.project
+.classpath
+.settings/
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Claude Code
+CLAUDE.md

@@ -1,0 +1,1 @@
+java -classpath ${BASH_SOURCE%/*}/bin crystalpalace.coff.COFFParser $1
