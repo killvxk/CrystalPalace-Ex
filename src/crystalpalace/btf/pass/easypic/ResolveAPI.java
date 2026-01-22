@@ -32,11 +32,13 @@ public class ResolveAPI extends BaseModify {
 			verbs.add(new MovRax());
 			verbs.add(new MovNotRax());
 			verbs.add(new Call64());
+			verbs.add(new Jmp64());
 		}
 		else {
 			verbs.add(new MovEax());
 			verbs.add(new MovNotEax());
 			verbs.add(new Call32());
+			verbs.add(new Jmp32());
 		}
 	}
 
@@ -199,13 +201,14 @@ public class ResolveAPI extends BaseModify {
 		program.mov(rdx, rsp);
 
 		/* alloc our shadowspace */
-		stackAlloc(program, 0x20);
+		stackAlloc(program, step.isDirty() ? 0x28 : 0x20);
+				//  ^-- check if current function is %rsp aligned or not
 
 		/* call our resolver function */
 		program.call(step.getLabel(resolver.getFunction()));
 
 		/* dealloc our shadowspace + the stack strings we just pushed too */
-		stackDealloc(program, 0x20 + total);
+		stackDealloc(program, step.isDirty() ? (0x28 + total) : (0x20 + total));
 
 		/* restore registers */
 		popad(program, saved);
@@ -222,7 +225,8 @@ public class ResolveAPI extends BaseModify {
 		List saved = pushad(program);
 
 		/* create our shadowspace for x64 ABI */
-		stackAlloc(program, 0x20);
+		stackAlloc(program, step.isDirty() ? 0x28 : 0x20);
+				//  ^-- check if current function is %rsp aligned or not
 
 		/* call our resolver function */
 		program.mov(ecx, resolveme.getModuleHash());
@@ -231,7 +235,7 @@ public class ResolveAPI extends BaseModify {
 		program.call(step.getLabel(resolver.getFunction()));
 
 		/* get rid of our x64 ABI shadowspace */
-		stackDealloc(program, 0x20);
+		stackDealloc(program, step.isDirty() ? 0x28 : 0x20);
 
 		/* restore registers */
 		popad(program, saved);
@@ -275,6 +279,34 @@ public class ResolveAPI extends BaseModify {
 			program.call(eax);
 		}
 		// 10/26/25 - test 13 (likely due to optimizations)
+	}
+
+	private class Jmp64 implements ModifyVerb {
+		public boolean check(String istr, Instruction next) {
+			return "JMP r/m64".equals(istr);
+		}
+
+		public void apply(CodeAssembler program, RebuildStep step, Instruction next) {
+			resolve_x64(program, step, next);
+
+			AsmRegister64 rax = new AsmRegister64(ICRegisters.rax);
+			program.jmp(rax);
+		}
+		// 01/09/26 - test 47 and 48
+	}
+
+	private class Jmp32 implements ModifyVerb {
+		public boolean check(String istr, Instruction next) {
+			return "JMP r/m32".equals(istr);
+		}
+
+		public void apply(CodeAssembler program, RebuildStep step, Instruction next) {
+			resolve_x86(program, step, next);
+
+			AsmRegister32 eax = new AsmRegister32(ICRegisters.eax);
+			program.jmp(eax);
+		}
+		// 01.09/26 - test 48
 	}
 
 	private class MovEax implements ModifyVerb {
@@ -326,11 +358,11 @@ public class ResolveAPI extends BaseModify {
 			AsmRegister64 rax = new AsmRegister64(ICRegisters.rax);
 			AsmRegister64 dst = new AsmRegister64( new ICRegister(next.getOp0Register()) );
 
-			program.push(rax);
+			pushrax(program);
 			resolve_x64(program, step, next);
 			program.mov(dst, rax);
-			program.pop(rax);
+			poprax(program);
 		}
-		// 10/26/25 - represented in unit test 26
+		// 2026.01.06 - well represented in unit tests.
 	}
 }

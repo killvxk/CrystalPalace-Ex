@@ -139,18 +139,20 @@ public class LinkerCLI implements SpecLogger {
 	}
 
 	protected static String varHelp() {
-		return  "\n\n\tUse @config.spec to run a specification file to configure variables for the specified .spec file." +
+		return
+			"\n\n\tArguments:" +
+				"\n\t\t@config.spec\tRun a specification file to configure variables." +
+				"\n\t\t-r %key=val\tResolve paths in %key relative to $CWD." +
 
-			"\n\n\tYou may also specify (optional) $DATAVARS and %VARIABLES on the command-line." +
+			"\n\n\tData Variables ($VARS):" +
+				"\n\t\tA=04030201\tplaces { 0x04, 0x03, 0x02, 0x01 } into $A." +
+				"\n" +
+				"\n\t\t* Note: The '$' prefix is optional to avoid shell escaping." +
+				"\n\t\t* Warning: Bytes are written left-to-right." +
+				"\n\t\t  Account for little endian when writing ints, longs, pointers, etc." +
 
-			"\n\n    $DATAVAR example:" +
-			"\n\n\t\\$A=04030201 places { 0x04, 0x03, 0x02, 0x01 } into $A." +
-			"\n\n\tYou may need to escape $A with \\" +
-			"\n\n\tTake care with the native byte order when specifying ints/longs/pointers" +
-
-			"\n\n    %VARIABLE example:" +
-			"\n\n\t%key=value sets %key to the string \"value\"" +
-			"\n\n\tUse -r %key=value to resolve the paths in %key relative to $CWD";
+			"\n\n\tString Variables (%VARS):" +
+				"\n\t\t%key=value\tSets %key to the literal string \"value\"";
 	}
 
 	public static void main(String args[]) {
@@ -170,12 +172,12 @@ public class LinkerCLI implements SpecLogger {
 		/* check our number of arguments */
 		if (args.length < 4) {
 			if ("run".equals(command)) {
-				CrystalUtils.print_error("./link [/path/to/loader.spec] [/path/to/file.dll|file.o] [out.bin] <\\$A=...> <%B=...> @C.spec" +
+				CrystalUtils.print_error("./link <loader.spec> <file.dll|file.o> <out.bin> [A=hex] [%B=val] [@config.spec]" +
 					"\n\tApply the specified .spec file to build a PIC DLL or COFF loader for file" +
 					varHelp());
 			}
 			else if ("buildPic".equals(command)) {
-				CrystalUtils.print_error("./piclink [/path/to/build.spec] <name.>[x86|x64] [out.bin] <\\$A=...> <%B=...> @C.spec" +
+				CrystalUtils.print_error("./piclink <build.spec> [label.]<x86|x64> <out.bin> [A=hex] [%B=val] [@config.spec]" +
 					"\n\tRun the specified .spec file to assemble a PIC program" +
 					varHelp());
 			}
@@ -207,6 +209,9 @@ public class LinkerCLI implements SpecLogger {
 		}
 		catch (SpecProgramException progex) {
 			CrystalUtils.print_error(progex.toString());
+		}
+		catch (NullPointerException npe) {
+			CrystalUtils.handleException(npe);
 		}
 		catch (RuntimeException runex) {
 			CrystalUtils.print_error(runex.getMessage());

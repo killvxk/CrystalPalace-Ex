@@ -26,6 +26,7 @@ public class GoFirst {
 	}
 
 	public Map apply(Map funcs) {
+		/* find entry symbol dynamically (supports go, _go, __go with optional @N suffix) */
 		String symbol = COFFObject.findEntrySymbolName(funcs, object.getMachine());
 
 		if (symbol == null)

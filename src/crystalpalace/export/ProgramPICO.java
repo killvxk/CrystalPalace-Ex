@@ -210,7 +210,7 @@ public class ProgramPICO {
 		}
 		else if (r.is_x64_rel32()) {
 			long reladdress = patch.getOffset() - ( r.getVirtualAddress() + r.getFromOffset() );
-			int  offset     = r.getOffsetAsLong() + (int)r.getSymbol().getValue();
+			int  offset     = r.getRemoteSectionOffset();
 
 			CrystalUtils.putDWORD(rawdata, patch.getVirtualAddress(), (int)reladdress + offset);
 
@@ -221,7 +221,7 @@ public class ProgramPICO {
 		}
 		else if (r.is("x86", Relocation.IMAGE_REL_I386_DIR32)) {
 			long offsetSymbolFromBase = patch.getOffset();
-			int  offsetDataFromSymbol = r.getOffsetAsLong() + (int)r.getSymbol().getValue();
+			int  offsetDataFromSymbol = r.getRemoteSectionOffset();
 
 			Logger.println("Symbol " + r.getSymbolName() + " from base? " + offsetSymbolFromBase + ", data from symbol? " + offsetDataFromSymbol);
 
@@ -231,7 +231,7 @@ public class ProgramPICO {
 		}
 		else if (r.is("x86", Relocation.IMAGE_REL_I386_REL32)) {
 			long reladdress = patch.getOffset() - ( r.getVirtualAddress() + r.getFromOffset() );
-			int  offset     = r.getOffsetAsLong() + (int)r.getSymbol().getValue();
+			int  offset     = r.getRemoteSectionOffset();
 
 			CrystalUtils.putDWORD(rawdata, patch.getVirtualAddress(), (int)reladdress + offset);
 
@@ -264,7 +264,7 @@ public class ProgramPICO {
 		}
 		else if (r.is("x64", Relocation.IMAGE_REL_AMD64_ADDR64)) {
 			long offsetSymbolFromBase = patch.getOffset();
-			int  offsetDataFromSymbol = r.getOffsetAsLong() + (int)r.getSymbol().getValue();
+			int  offsetDataFromSymbol = r.getRemoteSectionOffset();
 
 			Logger.println("Symbol " + r.getSymbolName() + " from base? " + offsetSymbolFromBase + ", data from symbol? " + offsetDataFromSymbol);
 
@@ -274,7 +274,7 @@ public class ProgramPICO {
 		}
 		else if (r.is("x86", Relocation.IMAGE_REL_I386_DIR32)) {
 			long offsetSymbolFromBase = patch.getOffset();
-			int  offsetDataFromSymbol = r.getOffsetAsLong() + (int)r.getSymbol().getValue();
+			int  offsetDataFromSymbol = r.getRemoteSectionOffset();
 
 			Logger.println("Symbol " + r.getSymbolName() + " from base? " + offsetSymbolFromBase + ", data from symbol? " + offsetDataFromSymbol);
 
@@ -318,10 +318,6 @@ public class ProgramPICO {
 
 		if (object.getSection(".data") != null)
 			content.add( object.getSection(".data"), false );
-
-		/* this is linked content from previous merges */
-		if (object.getSection(".cplink") != null)
-			content.add( object.getSection(".cplink"), false);
 
 		/* add our linked sections */
 		Iterator i = object.getExecutableLinks(false).iterator();

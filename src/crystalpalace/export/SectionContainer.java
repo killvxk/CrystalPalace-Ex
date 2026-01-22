@@ -139,4 +139,8 @@ public class SectionContainer {
 	public int length() {
 		return data.length() + slack;
 	}
+
+	public Section toSection(String name) {
+		return new SectionExport(name, getRawData(), getSymbols(), getRelocations());
+	}
 }

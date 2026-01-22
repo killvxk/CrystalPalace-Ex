@@ -18,44 +18,21 @@ import com.github.icedland.iced.x86.fmt.gas.*;
 import com.github.icedland.iced.x86.info.*;
 
 /*
- * An implementation of a code mutator for Crystal Palace. While software obfuscation is a well-established
- * field, the goals are usually to protect intellectual property and frustrate reverse engineering. This
- * implementation has neither of these goals!
- *
  * The goal of this mutator is to introduce content signature resilience into the .text section of a COFF its
  * applied to0. This mutator attempts to achieve this goal by breaking up the most attractive fingerprinting
  * targets within the program. Specifically:
  *
- * - By introducing random instruction noise (e.g., variations in size, numbers of instructions) we are subtly
- *   changing (some) local jump and call targets. Function disco (+disco) helps with calls too.
  * - This mutator breaks up constants where it can (e.g., function hashing constants are attractive targets)
  * - This mutator breaks up stack strings where it can
- * - This mutator breaks up some of the CISC memory-move instructions, as these usually occur in groups and
- *   the combination of their order and various pre-baked offsets can (I hypothesize) serve as function
- *   fingerprinting tools.
- *
- * One of the ways I've measured this implementation is by looking at the longest common-substring values
- * between the original+mutated program and mutated program candidates. The idea is to reduce this value
- * downwards.
- *
- * A challenge here, and not something I've looked at yet... but I'm curious about entropy changes between
- * pre and post-mutated programs. I hypothesize entropy measures of dynamic code (e.g., non-image memory) could
- * be a sign of definitely bad vs. possibly benign. Could be.
- *
- * A lot of stuff to play with here!
  */
 public class Mutator extends BaseModify {
 	/* add our mutator verbs */
 	public void setupVerbs() {
-		verbs.add(new Load());
-		verbs.add(new Store32());
-		verbs.add(new Store64());
+		verbs.add(new Cmp());
 		verbs.add(new MovImmReg32());
 		verbs.add(new MovImmReg64());
 		verbs.add(new MovImmMem32());
-		verbs.add(new Nop());
 		verbs.add(new PushImm32());
-		verbs.add(new ZeroReg32());
 	}
 
 	/* we're always going to punt if there's a relocation, because we don't want to deal with that here */
@@ -71,12 +48,6 @@ public class Mutator extends BaseModify {
 
 	public Mutator(Code code) {
 		super(code);
-	}
-
-	public boolean isRegOnly(Instruction next) {
-		InstructionInfoFactory instrInfoFactory = new InstructionInfoFactory();
-		InstructionInfo info = instrInfoFactory.getInfo(next);
-		return ! info.getUsedMemory().iterator().hasNext();
 	}
 
 	protected void _buildConstant64(CodeAssembler program, AsmRegister64 reg, long constant) {
@@ -125,67 +96,6 @@ public class Mutator extends BaseModify {
 				_buildConstant(program, reg, part1);
 				program.add(reg, constant - part1);
 				break;
-		}
-	}
-
-	protected void _nop32(CodeAssembler program) {
-		AsmRegister32 reg = getRandReg32();
-
-		switch (nextInt(6)) {
-			case 0:
-				program.nop();
-				break;
-			case 1:
-				program.or(reg, reg);
-				break;
-			case 2:
-				program.and(reg, reg);
-				break;
-			case 3:
-				program.add(reg, 0);
-				break;
-			case 4:
-				program.sub(reg, 0);
-				break;
-			case 5:
-				_nop(program);
-				_nop(program);
-				break;
-		}
-	}
-
-	protected void _nop64(CodeAssembler program) {
-		AsmRegister64 reg = getRandReg64();
-
-		switch (nextInt(6)) {
-			case 0:
-				program.nop();
-				break;
-			case 1:
-				program.or(reg, reg);
-				break;
-			case 2:
-				program.and(reg, reg);
-				break;
-			case 3:
-				program.add(reg, 0);
-				break;
-			case 4:
-				program.sub(reg, 0);
-				break;
-			case 5:
-				_nop(program);
-				_nop(program);
-				break;
-		}
-	}
-
-	protected void _nop(CodeAssembler program) {
-		if ( "x86".equals(object.getMachine()) ) {
-			_nop32(program);
-		}
-		else if ( "x64".equals(object.getMachine()) ) {
-			_nop64(program);
 		}
 	}
 
@@ -329,187 +239,28 @@ public class Mutator extends BaseModify {
 		}
 	}
 
-	/*
-	 * Break-up some of the CISC memory-move instructions to create some fingerprinting resilience. These instructions often occur
-	 * in groups too--making that cluster of bytes a potentially attractive fingerprinting target.
-	 */
-	private class Load implements ModifyVerb {
+	private class Cmp implements ModifyVerb {
 		public boolean check(String istr, Instruction next) {
-			return "MOV r64, r/m64".equals(istr) || "MOV r32, r/m32".equals(istr);
+			return ("CMP EAX, imm32".equals(istr) || "CMP r/m32, imm32".equals(istr)) && Register.isGPR32(next.getOp0Register());
 		}
 
 		public void apply(CodeAssembler program, RebuildStep step, Instruction next) {
-			String           istr  = next.getOpCode().toInstructionString();
+			AsmRegister32 dst   = new AsmRegister32( new ICRegister(next.getOp0Register()) );
+			AsmRegister32 tmp   = getRandReg32(dst);
 
-			AsmMemoryOperand src   = getMemOperand(next);
-			long             displ = next.getMemoryDisplacement64();
-
-			/* we're not going to do anything with this */
-			if (displ > 0xFF || displ < -0xFF || displ == 0 || src == null) {
-				program.addInstruction(next);
-			}
-			/*
-			 * lea rand+%src, %dst
-			 * mov (rand-displ)%dst, %dst
-			 */
-			else if ("MOV r64, r/m64".equals(istr)) {
-				AsmRegister64 dst   = new AsmRegister64( new ICRegister(next.getOp0Register()) );
-
-				long newdispl = nextInt(10) * 8;
-				if (nextInt(2) == 0)
-					newdispl = newdispl * -1;
-
-				src = src.displacement(newdispl);
-				program.lea(dst, src);
-
-				src = src.displacement(displ - newdispl).base( dst );
-				program.mov(dst, src);
-			}
-			/*
-			 * We're doing this x86 only... because trying to use our 32bit dst reg as a lea dst and
-			 * base reg will go to pot on x64.
-			 */
-			else if ("x86".equals(object.getMachine()) && "MOV r32, r/m32".equals(istr)) {
-				AsmRegister32 dst = new AsmRegister32( new ICRegister(next.getOp0Register()) );
-
-				long newdispl = nextInt(10) * 8;
-				if (nextInt(2) == 0)
-					newdispl = newdispl * -1;
-
-				src = src.displacement(newdispl);
-				program.lea(dst, src);
-
-				src = src.displacement(displ - newdispl).base( dst );
-				program.mov(dst, src);
+			if (object.x64()) {
+				AsmRegister64 tmp64 = RegConvert.toReg64(tmp);
+				program.push(tmp64);
+				_buildConstant(program, tmp, next.getImmediate32());
+				program.cmp(dst, tmp);
+				program.pop(tmp64);
 			}
 			else {
-				program.addInstruction(next);
-			}
-		}
-	}
-
-	private class Store32 implements ModifyVerb {
-		public boolean isDesiredReg(Instruction next) {
-			return next.getMemoryBase() == Register.EBP || next.getMemoryBase() == Register.ESP;
-		}
-
-		public boolean check(String istr, Instruction next) {
-			return "MOV r/m32, r32".equals(istr) && "x86".equals(object.getMachine()) && isDesiredReg(next);
-		}
-
-		/*
-		 * push %tmp
-		 * lea (rand)%dst, %tmp
-		 * mov %src, (displ-rand)%tmp
-		 * pop %tmp
-		 */
-		public void apply(CodeAssembler program, RebuildStep step, Instruction next) {
-			String           istr  = next.getOpCode().toInstructionString();
-			long             displ = next.getMemoryDisplacement64();
-			AsmMemoryOperand dst   = getMemOperand(next);
-
-			if (displ > 0xFF || displ < -0xFF || displ == 0 || dst == null) {
-				program.addInstruction(next);
-			}
-			else {
-				AsmRegister32 src = new AsmRegister32( new ICRegister(next.getOp1Register()) );
-				AsmRegister32 tmp = getRandReg32(src);
-
-				long newdispl = nextInt(10) * 8;
-				if (nextInt(2) == 0)
-					newdispl = newdispl * -1;
-
 				program.push(tmp);
-
-				dst = dst.displacement(newdispl);
-				program.lea(tmp, dst);
-
-				dst = dst.displacement(displ - newdispl).base( tmp );
-
-				/* if we're displacing off of the stack, we need to add 4b to account for the space we created */
-				if (next.getMemoryBase() == Register.ESP)
-					dst = dst.add(4);
-
-				program.mov(dst, src);
-
+				_buildConstant(program, tmp, next.getImmediate32());
+				program.cmp(dst, tmp);
 				program.pop(tmp);
 			}
-		}
-	}
-
-	private class Store64 implements ModifyVerb {
-		public boolean isDesiredReg(Instruction next) {
-			return next.getMemoryBase() == Register.RBP || next.getMemoryBase() == Register.RSP;
-		}
-
-		public boolean check(String istr, Instruction next) {
-			return "MOV r/m64, r64".equals(istr) && isDesiredReg(next);
-		}
-
-		/*
-		 * push %tmp
-		 * lea (rand)%dst, %tmp
-		 * mov %src, (displ-rand)%tmp
-		 * pop %tmp
-		 */
-		public void apply(CodeAssembler program, RebuildStep step, Instruction next) {
-			String           istr  = next.getOpCode().toInstructionString();
-			long             displ = next.getMemoryDisplacement64();
-			AsmMemoryOperand dst   = getMemOperand(next);
-
-			if (displ > 0xFF || displ < -0xFF || displ == 0 || dst == null) {
-				program.addInstruction(next);
-			}
-			else {
-				AsmRegister64    src = new AsmRegister64( new ICRegister(next.getOp1Register()) );
-				AsmRegister64    tmp = getRandReg64(src);
-
-				long newdispl = nextInt(10) * 8;
-				if (nextInt(2) == 0)
-					newdispl = newdispl * -1;
-
-				program.push(tmp);
-
-				dst = dst.displacement(newdispl);
-				program.lea(tmp, dst);
-
-				dst = dst.displacement(displ - newdispl).base( tmp );
-
-				/* if we're displacing off of the stack, we need to add 4b to account for the space we created */
-				if (next.getMemoryBase() == Register.RSP)
-					dst = dst.add(8);
-
-				program.mov(dst, src);
-
-				program.pop(tmp);
-			}
-		}
-	}
-
-	/*
-	 * Sub our nops for other nops (x86 or x64)
-	 */
-	private class Nop implements ModifyVerb {
-		public boolean check(String istr, Instruction next) {
-			return "NOP".equals(istr) || "NOP r/m32".equals(istr);
-		}
-
-		public void apply(CodeAssembler program, RebuildStep step, Instruction next) {
-			_nop(program);
-		}
-	}
-
-	/*
-	 * Change code to zero out a register to one of our random codes to zero out a register (x64)
-	 */
-	private class ZeroReg32 implements ModifyVerb {
-		public boolean check(String istr, Instruction next) {
-			return "MOV r32, imm32".equals(istr) && next.getImmediate32() == 0;
-		}
-
-		public void apply(CodeAssembler program, RebuildStep step, Instruction next) {
-			AsmRegister32 reg = new AsmRegister32( new ICRegister(next.getOp0Register()) );
-			_zeroReg32(program, reg);
 		}
 	}
 }

@@ -15,7 +15,7 @@ public class SpecParser {
 	protected static Set  arg2cmds   = CrystalUtils.toSet("attach, redirect, remap, preserve, addhook, exportfunc, optout, load, patch");
 	protected static Set  labels     = CrystalUtils.toSet("x86, x64, x86.o, x64.o, x86.dll, x64.dll");
 
-	protected static Set  options    = CrystalUtils.toSet("+optimize,+disco,+mutate,+gofirst");
+	protected static Set  options    = CrystalUtils.toSet("+optimize,+disco,+mutate,+gofirst,+blockparty,+shatter,+regdance");
 	protected static Set  optcmds    = CrystalUtils.toSet("make object, make pic, make pic64, make coff");
 
 	protected LinkSpec spec   = null;
@@ -146,7 +146,7 @@ public class SpecParser {
 			}
 
 			/* check if we're correct, first */
-			if (fullcmds.contains(content)) {
+			if ( fullcmds.contains(parser.getFullCommand()) ) {
 				//parser.setOption("+mutate");
 				spec.program.getInstructionsForLabel(label).add(parser);
 				return;

@@ -59,7 +59,7 @@ public class COFFMerge {
 				continue;
 
 			int  relocva     = (int)reloc.getVirtualAddress();
-			int  dataaddr    = reloc.getOffsetAsLong() + (int)reloc.getSymbol().getValue();
+			int  dataaddr    = reloc.getRemoteSectionOffset();
 			long reladdress  = reloc.getVirtualAddress() + reloc.getFromOffset();
 
 			/* what does it take to resolve this relocation, with our specific symbol? */

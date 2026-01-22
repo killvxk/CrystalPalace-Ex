@@ -65,7 +65,7 @@ public class ProgramPIC {
 		Section key = getKey(r);
 
 		long reladdress = program.getBase(key) - (r.getVirtualAddress() + r.getFromOffset());
-		int  offset     = r.getOffsetAsLong() + (int)r.getSymbol().getValue();
+		int  offset     = r.getRemoteSectionOffset();
 		int  relocva    = (int)program.getBase(r) + (int)r.getVirtualAddress();
 
 		if (r.is_x64_rel32()) {
@@ -121,10 +121,6 @@ public class ProgramPIC {
 
 		/* add other sections, if they're desired */
 		addSections();
-
-		/* add cplink data, if we did a merge previously */
-		if (object.getSection(".cplink") != null)
-			program.add( object.getSection(".cplink"), false);
 
 		/* walk through our linked data and add it to our program data */
 		Iterator i = object.getLinks().iterator();

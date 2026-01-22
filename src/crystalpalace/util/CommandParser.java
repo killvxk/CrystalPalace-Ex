@@ -233,12 +233,12 @@ public class CommandParser {
 		for (; x < argz.length(); x++) {
 			char temp = argz.charAt(x);
 
-			if (temp == ' ') {
+			if (Character.isWhitespace(temp)) {
 				command = token.toString();
 				token   = new StringBuffer();
 				break;
 			}
-			else if (temp == ',' && (x + 2) < argz.length() && argz.charAt(x + 2) == ' ') {
+			else if (temp == ',' && (x + 2) < argz.length() && Character.isWhitespace( argz.charAt(x + 2) )) {
 				command   = token.toString();
 				quotechar = argz.charAt(x + 1);
 				token     = new StringBuffer();
@@ -266,7 +266,7 @@ public class CommandParser {
 		/* keep walking this way to build our arguments */
 		for (; x < argz.length(); x++) {
 			char temp = argz.charAt(x);
-			if (temp == ' ') {
+			if (Character.isWhitespace(temp)) {
 				if (token.length() > 0)
 					addToken(tokens, token.toString(), false);
 				token = new StringBuffer();

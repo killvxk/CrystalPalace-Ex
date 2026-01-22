@@ -38,8 +38,12 @@ public class Symbol implements Comparable {
 	}
 
 	public static Symbol createFunctionSymbol(COFFObject obj, String name, long address) {
+		return createFunctionSymbol(obj.getSection(".text"), name, address);
+	}
+
+	public static Symbol createFunctionSymbol(Section sect, String name, long address) {
 		Symbol temp       = new Symbol();
-		temp.section      = obj.getSection(".text");
+		temp.section      = sect;
 		temp.Name         = name;
 		temp.Value        = address;
 		temp.Type         = 32;
@@ -65,6 +69,10 @@ public class Symbol implements Comparable {
 
 	public String getName() {
 		return Name;
+	}
+
+	public boolean foldsWith(Symbol x) {
+		return x.Name.equals(Name) && x.Type == Type && x.StorageClass == StorageClass;
 	}
 
 	public boolean isSectionName() {

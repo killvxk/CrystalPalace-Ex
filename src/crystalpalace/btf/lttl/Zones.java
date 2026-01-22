@@ -1,5 +1,7 @@
-package crystalpalace.btf;
+package crystalpalace.btf.lttl;
 
+import crystalpalace.btf.*;
+import crystalpalace.btf.Code;
 import crystalpalace.coff.*;
 import crystalpalace.util.*;
 
@@ -24,7 +26,13 @@ public class Zones implements CodeVisitor {
 	public Zones(Code analysis) {
 		this.analysis = analysis;
 
+		ignore.add("ADD EAX, imm32");
 		ignore.add("CMP EAX, imm32"); /* fixptrs acts on this, but in a flags-preserving way */
+		ignore.add("CMP r/m32, imm32");
+		ignore.add("CMP r/m8, imm8");
+		ignore.add("CMP r/m16, imm16");
+		ignore.add("CMP r/m32, imm32");
+		ignore.add("CMP r/m64, imm32");
 	}
 
 	public boolean isDangerous(Instruction inst) {

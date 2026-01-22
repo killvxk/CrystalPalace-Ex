@@ -69,6 +69,10 @@ public class Section {
 		return SectionFlags.isExecute(Characteristics);
 	}
 
+	public boolean isCommonData() {
+		return SectionFlags.isCommonData(Characteristics);
+	}
+
 	/* we may need this elsewhere, right? */
 	public long getCharacteristics() {
 		return Characteristics;

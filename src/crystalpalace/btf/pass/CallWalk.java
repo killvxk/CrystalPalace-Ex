@@ -1,4 +1,4 @@
-package crystalpalace.btf.pass.mutate;
+package crystalpalace.btf.pass;
 
 import crystalpalace.btf.*;
 import crystalpalace.btf.Code;
@@ -27,6 +27,10 @@ public class CallWalk {
 		this.object = code.getObject();
 	}
 
+	public void check(String parent, String symbol, Instruction inst) {
+		/* do nothing. This is for child classes to act on, if they wish */
+	}
+
 	/*
 	 * This is our x64 call analysis, the purpose of this section is to walk our code (using a specific starting
 	 * function), and determine which functions are used vs. not.
@@ -35,8 +39,13 @@ public class CallWalk {
 		/* our instructions of interest */
 		Set x64insts = new HashSet();
 		x64insts.add("LEA r64, m");
+
+		/* NOTE, these instruction forms are unlikely (never) to be generated with a rip-relative
+		 * reference to a local function. I'm keeping them here, for now but in my testing, LEA is
+		 * the only form that seems to really matter here. */
 		x64insts.add("MOV r64, r/m64");
 		x64insts.add("CALL r/m64");
+		x64insts.add("JMP r/m64");
 
 		/* if we're walking the function, it's referenced/called and we want to keep it */
 		touched.add(function);
@@ -46,16 +55,20 @@ public class CallWalk {
 		while (i.hasNext()) {
 			Instruction inst = (Instruction)i.next();
 
-			if ( inst.isCallNear() ) {
+			if ( inst.isCallNear() || inst.isJmpShortOrNear() ) {
 				Symbol temp = code.getLabel( inst.getMemoryDisplacement32() );
-				if (temp != null && !touched.contains( temp.getName() ))
+				if (temp != null && !touched.contains( temp.getName() )) {
+					check(function, temp.getName(), inst);
 					walk_x64( temp.getName() );
+				}
 			}
 			else if (inst.isIPRelativeMemoryOperand()) {
 				if (x64insts.contains(inst.getOpCode().toInstructionString())) {
 					Symbol temp = code.getLabel( inst.getMemoryDisplacement32() );
-					if (temp != null && !touched.contains( temp.getName() ))
+					if (temp != null && !touched.contains( temp.getName() )) {
+						check(function, temp.getName(), inst);
 						walk_x64( temp.getName() );
+					}
 				}
 			}
 
@@ -65,6 +78,7 @@ public class CallWalk {
 				String symb = r.getSymbolName().substring(8);
 				Symbol temp = object.getSymbol(symb);
 				if (temp != null && ".text".equals(temp.getSection().getName()) && !touched.contains(temp.getName())) {
+					check(function, temp.getName(), inst);
 					walk_x64( temp.getName() );
 				}
 			}
@@ -86,23 +100,28 @@ public class CallWalk {
 
 			/* if this is an instruction that touches our local label, we want to get that label
 			 * and walk that function */
-			if ( inst.isCallNear() ) {
+			if ( inst.isCallNear() || inst.isJmpShortOrNear() ) {
 				Symbol temp = code.getLabel( inst.getMemoryDisplacement32() );
-				if (temp != null && !touched.contains( temp.getName() ))
+				if (temp != null && !touched.contains( temp.getName() )) {
+					check(function, temp.getName(), inst);
 					walk_x86( temp.getName() );
+				}
 			}
 
 			/* check for a relocation associated with the label */
 			Relocation r = code.getRelocation(inst);
 			if (r != null && ".text".equals(r.getSymbolName())) {
 				Symbol temp = code.getLabel( r.getOffsetAsLong() );
-				if (temp != null && !touched.contains( temp.getName() ))
+				if (temp != null && !touched.contains( temp.getName() )) {
+					check(function, temp.getName(), inst);
 					walk_x86( temp.getName() );
+				}
 			}
 			/* same type of thing as the x64 .refptr issue... we have a relocation for a local symbol... we need to walk it */
 			else if (r != null) {
 				Symbol temp = object.getSymbol(r.getSymbolName());
 				if (temp != null && temp.getSection() != null && ".text".equals(temp.getSection().getName()) && !touched.contains(temp.getName())) {
+					check(function, temp.getName(), inst);
 					walk_x86( temp.getName() );
 				}
 			}

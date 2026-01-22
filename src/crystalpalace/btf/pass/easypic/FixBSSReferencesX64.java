@@ -23,10 +23,14 @@ public class FixBSSReferencesX64 extends BaseModify {
 	protected int    bsssize = 0;
 
 	public void setupVerbs() {
+		verbs.add(new Call64());
+
 		verbs.add(new LoadAddress());
 
-		verbs.add(new Load32_8());
-		verbs.add(new Load32_16());
+		verbs.add(new Load32_8_S());
+		verbs.add(new Load32_8_Z());
+		verbs.add(new Load32_16_S());
+		verbs.add(new Load32_16_Z());
 		verbs.add(new Load32_32());
 
 		verbs.add(new Load64_64());
@@ -36,6 +40,7 @@ public class FixBSSReferencesX64 extends BaseModify {
 		verbs.add(new Store32());
 		verbs.add(new Store64());
 
+		verbs.add(new CompareConstant());
 		verbs.add(new StoreConstant());
 	}
 
@@ -45,19 +50,26 @@ public class FixBSSReferencesX64 extends BaseModify {
 			return false;
 
 		/* we're working with .bss references */
-		if ( ".bss".equals(step.getRelocation().getSymbolName()) ) {
+		if ( step.getRelocation().isSection(".bss") )
 			return true;
-		}
 
 		return false;
 	}
 
 	public void noMatch(CodeAssembler program, RebuildStep step, Instruction next) {
-		System.out.println(next.getOpCode().toInstructionString());
-		CodeUtils.printInst(code, next);
+		CodeUtils.p(step);
 		CodeInfo.Dump(next, null);
 
-		throw new RuntimeException(this.getClass().getSimpleName() + ": Can't transform '" + step.getInstructionString() + "' to handle " + step.getRelocation() + ". Change your compiler optimization settings or turn off optimizations for this function.");
+		throw new RuntimeException(this.getClass().getSimpleName() + ": Can't transform '" + step.getInstructionString() + "' to handle " + step.getRelocation() + ". Change your compiler optimization settings or turn off optimizations for " + step.getFunction());
+	}
+
+	/* This is our catch-all to look for eflags modification and warn appropriately about it */
+	protected void checkDanger(CodeAssembler program, RebuildStep step) {
+		if (!step.isDangerous())
+			return;
+
+		CodeUtils.p(step);
+		throw new RuntimeException(this.getClass().getSimpleName() + ": Possible rflags corruption if I transform '" + step.getInstructionString() +"' to handle " + step.getRelocation() + ". Change your compiler optimization settings or turn off optimizations for " + step.getFunction());
 	}
 
 	public FixBSSReferencesX64(Code code, String getbss) {
@@ -66,6 +78,8 @@ public class FixBSSReferencesX64 extends BaseModify {
 	}
 
 	public void callGetBSS(CodeAssembler program, RebuildStep step) {
+		checkDanger(program, step);
+
 		int bsslen = object.getSection(".bss").getRawData().length;
 
 		AsmRegister64 rax = new AsmRegister64(ICRegisters.rax);
@@ -75,24 +89,96 @@ public class FixBSSReferencesX64 extends BaseModify {
 		List saved = pushad(program);
 
 		/* create our shadowspace for x64 ABI */
-		stackAlloc(program, 0x20);
+		stackAlloc(program, step.isDirty() ? 0x28 : 0x20);
+				//  ^-- check if our function is NOT %rsp aligned already
 
 		/* call our getBSS function */
 		program.mov(ecx, bsslen);
 		program.call(step.getLabel(getbss));
 
 		/* get rid of our x64 ABI shadowspace */
-		stackDealloc(program, 0x20);
+		stackDealloc(program, step.isDirty() ? 0x28 : 0x20);
 
 		/* restore registers */
 		popad(program, saved);
 
 		/* NOW, let's adjust %rax based on the offset into .bss */
 		int bssoffset = step.getInstructionLength() - (step.getRelocOffset() + step.getRelocation().getFromOffset());
-		    bssoffset = bssoffset + step.getRelocation().getOffsetAsLong();
+		    bssoffset = bssoffset + step.getRelocation().getRemoteSectionOffset();
 
 		if (bssoffset != 0)
 			program.add(rax, bssoffset);
+
+		/* resolve the relocation too. */
+		step.resolve();
+	}
+
+	private class Call64 implements ModifyVerb {
+		public boolean check(String istr, Instruction next) {
+			return "CALL r/m64".equals(istr);
+		}
+
+		public void apply(CodeAssembler program, RebuildStep step, Instruction next) {
+			AsmRegister64 rax = new AsmRegister64(ICRegisters.rax);
+
+			/* get our BSS pointer */
+			callGetBSS(program, step);
+
+			/* %rax <- [%rax] */
+			program.mov(rax, AsmRegisters.mem_ptr(rax, 0));
+
+			/* call %rax */
+			program.call(rax);
+		}
+		// 01/09/26 - represented in stack cutting.
+	}
+
+	private class CompareConstant implements ModifyVerb {
+		protected Set valid = new HashSet();
+
+		public CompareConstant() {
+			valid.add("CMP r/m8, imm8");
+			valid.add("CMP r/m16, imm16");
+			valid.add("CMP r/m32, imm32");
+			valid.add("CMP r/m64, imm32");
+		}
+
+		public boolean check(String istr, Instruction next) {
+			return valid.contains(istr) && next.isIPRelativeMemoryOperand();
+		}
+
+		public void apply(CodeAssembler program, RebuildStep step, Instruction next) {
+			int           val  = next.getImmediate32();
+			String        istr = next.getOpCode().toInstructionString();
+			AsmRegister64 rax  = new AsmRegister64(ICRegisters.rax);
+
+			/* push our %rax register */
+			pushrax(program);
+
+			/* let's get our .bss pointer */
+			callGetBSS(program, step);
+
+			/* [rax] <- val ; type hint (e.g., byte_ptr) dictates the instruction that gets generated */
+			if ("CMP r/m8, imm8".equals(istr)) {
+				program.cmp(AsmRegisters.byte_ptr(rax, 0), val);
+			}
+			else if ("CMP r/m16, imm16".equals(istr)) {
+				program.cmp(AsmRegisters.word_ptr(rax, 0), val);
+			}
+			else if ("CMP r/m32, imm32".equals(istr)) {
+				program.cmp(AsmRegisters.dword_ptr(rax, 0), val);
+			}
+			else if ("CMP r/m64, imm32".equals(istr)) {
+				program.cmp(AsmRegisters.qword_ptr(rax, 0), val);
+			}
+			else {
+				throw new RuntimeException("Invalid istr " + istr + " in CompareConstant");
+			}
+
+			/* bring %rax back */
+			poprax(program);
+		}
+		// 01/09/26 - test 35, all cases represented.
 	}
 
 	private class StoreConstant implements ModifyVerb {
@@ -115,7 +201,7 @@ public class FixBSSReferencesX64 extends BaseModify {
 			AsmRegister64 rax  = new AsmRegister64(ICRegisters.rax);
 
 			/* push our %rax register */
-			program.push(rax);
+			pushrax(program);
 
 			/* let's get our .bss pointer */
 			callGetBSS(program, step);
@@ -138,11 +224,9 @@ public class FixBSSReferencesX64 extends BaseModify {
 			}
 
 			/* bring %rax back */
-			program.pop(rax);
-
-			/* resolve it! */
-			step.resolve();
+			poprax(program);
 		}
+		// 01/09/26 - test 14 -- each form covered
 	}
 
 	private abstract class StoreValue implements ModifyVerb {
@@ -159,6 +243,9 @@ public class FixBSSReferencesX64 extends BaseModify {
 			RegValue src = RegValue.toRegValue(next, 1);
 
 			if (is(rax, src)) {
+				/* save %rax */
+				program.push(_rax);
+
 				/* push our %tmp register, thanks */
 				program.push(_tmp);
 
@@ -173,10 +260,13 @@ public class FixBSSReferencesX64 extends BaseModify {
 
 				/* restore our original tmp reg */
 				program.pop(_tmp);
+
+				/* restore %rax */
+				program.pop(_rax);
 			}
 			else {
-				/* push our %rax register, please */
-				program.push(_rax);
+				/* save %rax */
+				pushrax(program);
 
 				/* let's get our BSS ptr */
 				callGetBSS(program, step);
@@ -184,12 +274,9 @@ public class FixBSSReferencesX64 extends BaseModify {
 				/* store src value at [%rax] */
 				storeValue(program, rax, src);
 
-				/* restore original rax value */
-				program.pop(_rax);
+				/* restore %rax */
+				poprax(program);
 			}
-
-			/* mark this instruction-associated relocation as resolved */
-			step.resolve();
 		}
 	}
 
@@ -209,6 +296,7 @@ public class FixBSSReferencesX64 extends BaseModify {
 		public void storeValue(CodeAssembler program, RegValue dst, RegValue src) {
 			program.mov(AsmRegisters.mem_ptr(dst.getReg64(), 0), src.getReg8());
 		}
+		// 01/09/26 - test 14 dst=other, dst=%rax
 	}
 
 	private class Store16 extends StoreValue {
@@ -227,6 +315,7 @@ public class FixBSSReferencesX64 extends BaseModify {
 		public void storeValue(CodeAssembler program, RegValue dst, RegValue src) {
 			program.mov(AsmRegisters.mem_ptr(dst.getReg64(), 0), src.getReg16());
 		}
+		// 01/09/26 - test 14 dst=other, dst=%rax
 	}
 
 	private class Store32 extends StoreValue {
@@ -245,6 +334,7 @@ public class FixBSSReferencesX64 extends BaseModify {
 		public void storeValue(CodeAssembler program, RegValue dst, RegValue src) {
 			program.mov(AsmRegisters.mem_ptr(dst.getReg64(), 0), src.getReg32());
 		}
+		// 01/09/26 - test 14 dst=other, dst=%rax
 	}
 
 	private class Store64 extends StoreValue {
@@ -263,6 +353,7 @@ public class FixBSSReferencesX64 extends BaseModify {
 		public void storeValue(CodeAssembler program, RegValue dst, RegValue src) {
 			program.mov(AsmRegisters.mem_ptr(dst.getReg64(), 0), src.getReg64());
 		}
+		// 01/09/26 - test 14 dst=other, dst=%rax
 	}
 
 	private abstract class LoadValue32 implements ModifyVerb {
@@ -282,7 +373,7 @@ public class FixBSSReferencesX64 extends BaseModify {
 			}
 			else {
 				/* save RAX too */
-				program.push(rax);
+				pushrax(program);
 
 				/* let's grab our BSS ptr */
 				callGetBSS(program, step);
@@ -291,15 +382,12 @@ public class FixBSSReferencesX64 extends BaseModify {
 				loadValue(program, dst, rax);
 
 				/* restore rax */
-				program.pop(rax);
+				poprax(program);
 			}
-
-			/* mark this instruction-associated relocation as resolved */
-			step.resolve();
 		}
 	}
 
-	private class Load32_8 extends LoadValue32 {
+	private class Load32_8_Z extends LoadValue32 {
 		public boolean check(String istr, Instruction next) {
 			return "MOVZX r32, r/m8".equals(istr) && next.isIPRelativeMemoryOperand();
 		}
@@ -307,9 +395,10 @@ public class FixBSSReferencesX64 extends BaseModify {
 		public void loadValue(CodeAssembler program, AsmRegister32 dst, AsmRegister64 src) {
 			program.movzx(dst, AsmRegisters.byte_ptr(src, 0));
 		}
+		// 01/09/26 - dst=%eax test 14; dst=other test 14
 	}
 
-	private class Load32_16 extends LoadValue32 {
+	private class Load32_16_Z extends LoadValue32 {
 		public boolean check(String istr, Instruction next) {
 			return "MOVZX r32, r/m16".equals(istr) && next.isIPRelativeMemoryOperand();
 		}
@@ -317,6 +406,29 @@ public class FixBSSReferencesX64 extends BaseModify {
 		public void loadValue(CodeAssembler program, AsmRegister32 dst, AsmRegister64 src) {
 			program.movzx(dst, AsmRegisters.word_ptr(src, 0));
 		}
+		// 01/09/26 - dst=%eax test 14; dst=other test 14
+	}
+
+	private class Load32_8_S extends LoadValue32 {
+		public boolean check(String istr, Instruction next) {
+			return "MOVSX r32, r/m8".equals(istr) && next.isIPRelativeMemoryOperand();
+		}
+
+		public void loadValue(CodeAssembler program, AsmRegister32 dst, AsmRegister64 src) {
+			program.movsx(dst, AsmRegisters.byte_ptr(src, 0));
+		}
+		// 01/09/26 - dst=other in tests 35, 39
+	}
+
+	private class Load32_16_S extends LoadValue32 {
+		public boolean check(String istr, Instruction next) {
+			return "MOVSX r32, r/m16".equals(istr) && next.isIPRelativeMemoryOperand();
+		}
+
+		public void loadValue(CodeAssembler program, AsmRegister32 dst, AsmRegister64 src) {
+			program.movsx(dst, AsmRegisters.word_ptr(src, 0));
+		}
+		// 01/09/26 - dst=other in tests 35, 39
 	}
 
 	private class Load32_32 extends LoadValue32 {
@@ -327,6 +439,7 @@ public class FixBSSReferencesX64 extends BaseModify {
 		public void loadValue(CodeAssembler program, AsmRegister32 dst, AsmRegister64 src) {
 			program.mov(dst, AsmRegisters.mem_ptr(src, 0));
 		}
+		// 01/09/26 - dst=%eax test 14 (most common form); dst=other test 14
 	}
 
 	private class Load64_64 implements ModifyVerb {
@@ -347,7 +460,7 @@ public class FixBSSReferencesX64 extends BaseModify {
 			}
 			else {
 				/* save RAX too */
-				program.push(rax);
+				pushrax(program);
 
 				/* let's grab our BSS ptr */
 				callGetBSS(program, step);
@@ -356,12 +469,10 @@ public class FixBSSReferencesX64 extends BaseModify {
 				program.mov(dst, AsmRegisters.mem_ptr(rax, 0));
 
 				/* restore rax */
-				program.pop(rax);
+				poprax(program);
 			}
-
-			/* mark this instruction-associated relocation as resolved */
-			step.resolve();
 		}
+		// 01/09/26 - test 14 and test 32. Both branches represented.
 	}
 
 	private class LoadAddress implements ModifyVerb {
@@ -379,7 +490,7 @@ public class FixBSSReferencesX64 extends BaseModify {
 			}
 			else {
 				/* save RAX too */
-				program.push(rax);
+				pushrax(program);
 
 				/* get our .bss pointer */
 				callGetBSS(program, step);
@@ -388,11 +499,9 @@ public class FixBSSReferencesX64 extends BaseModify {
 				program.mov(dst, rax);
 
 				/* restore rax */
-				program.pop(rax);
+				poprax(program);
 			}
-
-			/* mark this instruction-associated relocation as resolved */
-			step.resolve();
 		}
+		// 01/09/26 - test 14, 29, and 39. Both branches represented.
 	}
 }

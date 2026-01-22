@@ -7,13 +7,12 @@ import java.util.*;
 import java.nio.*;
 
 /*
- * What do we do here? We pack in values, resolve symbols, blah blah blah
+ * This is an experimental re-implementation of our COFF export to better support transforming BOFs
  */
 public class ProgramCOFF {
 	protected ExportObject   object;
 	protected Map            sections = new LinkedHashMap();
-	protected Map            sectnos  = new HashMap();
-	protected LinkedSections linked   = new LinkedSections();
+	protected List           linked   = new LinkedList();
 
 	public ProgramCOFF(ExportObject object) {
 		this.object = object;
@@ -21,31 +20,73 @@ public class ProgramCOFF {
 	}
 
 	public int getSectionNumber(Section s) {
-		return (int)sectnos.get(s);
+		if ( ".text".equals(s.getName()) )
+			return 1;
+
+		if ( ".rdata".equals(s.getName()) )
+			return 2;
+
+		if ( ".data".equals(s.getName()) )
+			return 3;
+
+		if ( ".bss".equals(s.getName()) )
+			return 4;
+
+		throw new RuntimeException("Invalid section: " + s.getName());
 	}
 
-	public void add(String name, Section s) {
-		sections.put(name, s);
-		sectnos.put(s, sectnos.size() + 1);
+	public void createSection(String name, boolean eXecutable) {
+		SectionContainer container = new SectionContainer();
+
+		/* add our original section */
+		if (object.getSection(name) != null)
+			container.add(object.getSection(name), false);
+
+		/* add our linked data */
+		Iterator i = object.getExecutableLinks(eXecutable).iterator();
+		while (i.hasNext())
+			container.add( (Section)i.next(), false );
+
+		/* create our section */
+		Section section = container.toSection(name);
+
+		/* create symbols for the linked data by converting their psuedo-section names to symbols */
+		Iterator j = object.getExecutableLinks(eXecutable).iterator();
+		while (j.hasNext()) {
+			Section sect = (Section)j.next();
+
+			String sname  = sect.getName();
+			long   svalue = container.getBase(sect);
+
+			if (eXecutable)
+				linked.add(Symbol.createFunctionSymbol(section, sname, svalue));
+			else
+				linked.add(Symbol.createDataSymbol(section, sname, svalue));
+		}
+
+		/* add to the mix of our merged COFF, thanks */
+		sections.put(name, section);
 	}
 
 	public void setupSections() {
-		/* the almighty .text section! */
-		add(".text",  object.getSection(".text") );
+		/*
+		 * .text section first
+		 */
+		createSection(".text", true);
 
-		/* our usual suspects */
-		if (object.getSection(".rdata") != null)
-			add(".rdata", object.getSection(".rdata"));
+		/*
+		 * .rdata section next
+		 */
+		createSection(".rdata", false);
 
+		/*
+		 * Our other sections
+		 */
 		if (object.getSection(".data") != null)
-			add(".data", object.getSection(".data"));
+			sections.put(".data", object.getSection(".data"));
 
 		if (object.getSection(".bss") != null)
-			add(".bss", object.getSection(".bss"));
-
-		/* add our linked sections */
-		linked.go(object);
-		add(".cplink", linked.getSection());
+			sections.put(".bss", object.getSection(".bss"));
 	}
 
 	public List getSections() {
@@ -97,8 +138,8 @@ public class ProgramCOFF {
 			results.addAll(sect.getSymbols());
 		}
 
-		/* we converted our linked sections to symbols and folded them into .cplink */
-		results.addAll(linked.getSymbols());
+		/* we converted our linked sections to symbols too */
+		results.addAll(linked);
 
 		return results;
 	}

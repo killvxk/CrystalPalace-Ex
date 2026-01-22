@@ -83,6 +83,11 @@ public class SectionFlags {
 			s.append(" ");
 		}
 
+		if (isCommonData(flags)) {
+			s.append("(COMDAT)");
+			s.append(" ");
+		}
+
 		s.append(CrystalUtils.toHex(flags));
 		return s.toString();
 	}

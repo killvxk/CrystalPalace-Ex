@@ -367,7 +367,7 @@ public class SpecProgram {
 				File temp = getOutFileFromArg(args[0]);
 				obj.getObject().coffparse(temp);
 			}
-			catch (IOException ioex) {
+			catch (Exception ioex) {
 				throw new SpecProgramException(this, ioex.getMessage());
 			}
 
@@ -380,7 +380,7 @@ public class SpecProgram {
 				File temp = getOutFileFromArg(args[0]);
 				obj.getObject().disassemble(temp);
 			}
-			catch (IOException ioex) {
+			catch (Exception ioex) {
 				throw new SpecProgramException(this, ioex.getMessage());
 			}
 

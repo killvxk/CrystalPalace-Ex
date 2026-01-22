@@ -32,7 +32,7 @@ public class LinkTimeOptimizer extends CallWalk {
 	public Map apply(ExportInfo exports, Map _funcs) {
 		funcs  = _funcs;
 
-		/* handle our entry point check */
+		/* find entry symbol dynamically (supports go, _go, __go with optional @N suffix) */
 		String entrySymbol = COFFObject.findEntrySymbolName(funcs, object.getMachine());
 		if (entrySymbol != null) {
 			walk(entrySymbol);
@@ -70,6 +70,22 @@ public class LinkTimeOptimizer extends CallWalk {
 
 		/* get that stuff out of our COFF now */
 		object.removeSymbols(removeme);
+
+		/* And, since we're optimizing the size somewhat. Let's trim any NOP and INT3 instructions padding the
+		 * end of our instructions too. Eh?!? */
+		Iterator j = funcs.values().iterator();
+		while (j.hasNext()) {
+			LinkedList instrs = (LinkedList)j.next();
+			Iterator k = instrs.descendingIterator();
+			while (k.hasNext()) {
+				Instruction next = (Instruction)k.next();
+
+				if (CodeUtils.is(next, "NOP") || CodeUtils.is(next, "INT3"))
+					k.remove();
+				else
+					break;
+			}
+		}
 
 		/* and as simple as that... return our modified function map */
 		return funcs;

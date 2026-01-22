@@ -29,21 +29,67 @@ public class COFFList {
 
 	public void add(COFFObject o) {
 		/* pull our symbols out of this object, we'll need this later on */
-		Iterator i = o.getSymbols().values().iterator();
+		Iterator i = o.getSections().values().iterator();
+		while (i.hasNext()) {
+			Section sect = (Section)i.next();
+
+			/* COMDAT check */
+			if (foldMe(sect))
+				continue;
+
+			/* grabbing symbols now... section by section instead */
+			Iterator j    = sect.getSymbols().iterator();
+			while (j.hasNext()) {
+				Symbol _symbol = (Symbol)j.next();
+
+				if (_symbol.isUndefinedSection() || !_symbol.isExternal())
+					continue;
+
+				if (symbols.containsKey(_symbol.getName()))
+					throw new RuntimeException("Merge failed. Duplicate symbol " + _symbol.getName());
+
+				symbols.put(_symbol.getName(), _symbol);
+			}
+		}
+
+		/* track our object as something of interest */
+		objects.add(o);
+	}
+
+	/*
+	 * How does this work? We're checking if a COMDAT section's symbols are already represented in
+	 * our current symbol table. If they are (and each symbol is like its other); then we presume
+	 * that this section is already fully represented in our merged program and we don't process
+	 * the section any further. If we choose to process this section (e.g., don't fold) and there's
+	 * a symbol conflict, the presumption is that the error will get raised elsewhere.
+	 */
+	public boolean foldMe(Section s) {
+		if (!s.isCommonData())
+			return false;
+
+		Iterator i = s.getSymbols().iterator();
 		while (i.hasNext()) {
 			Symbol _symbol = (Symbol)i.next();
 
 			if (_symbol.isUndefinedSection() || !_symbol.isExternal())
 				continue;
 
-			if (symbols.containsKey(_symbol.getName()))
-				throw new RuntimeException("Merge failed. Duplicate symbol " + _symbol.getName());
+			/* if we don't know about a symbol, don't fold */
+			if (! symbols.containsKey(_symbol.getName()) )
+				return false;
 
-			symbols.put(_symbol.getName(), _symbol);
+			Symbol other = (Symbol)symbols.get(_symbol.getName());
+
+			/* if this section is associated with the symbol, do not fold */
+			if (_symbol == other)
+				return false;
+
+			/* if these two symbols are different in some way... don't fold */
+			if (!_symbol.foldsWith(other))
+				return false;
 		}
 
-		/* track our object as something of interest */
-		objects.add(o);
+		return true;
 	}
 
 	public void walk(Section s, Set seen) {
@@ -53,6 +99,10 @@ public class COFFList {
 
 		/* add this section to our seen list, how did I forget that? */
 		seen.add(s);
+
+		/* check if we are COMDAT and already present */
+		if (foldMe(s))
+			return;
 
 		/* track this in our groups! */
 		getGroup(s.getGroupName()).add(s);

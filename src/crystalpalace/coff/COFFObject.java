@@ -131,6 +131,14 @@ public class COFFObject {
 		return "x64".equals(getMachine()) || "x86".equals(getMachine());
 	}
 
+	public boolean x86() {
+		return "x86".equals(getMachine());
+	}
+
+	public boolean x64() {
+		return "x64".equals(getMachine());
+	}
+
 	public int getBits() {
 		if ( "x86".equals(getMachine()) )
 			return 32;

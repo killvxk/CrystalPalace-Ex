@@ -138,7 +138,7 @@ public class LinkSpec {
 
 		/* try to make this less generic if we can */
 		if ("loader.spec".equals(name))
-			name = new java.io.File(parent).getParentFile().getName();
+			name = new java.io.File(parent).getAbsoluteFile().getParentFile().getName();
 
 		/* setup our interpreter, plz */
 		program = new SpecProgram(parent);

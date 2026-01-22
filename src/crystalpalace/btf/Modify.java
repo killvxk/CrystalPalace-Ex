@@ -54,7 +54,7 @@ public class Modify {
 		pass.add(new ResolveTags(code, exports));
 
 		/* let's apply this pass and rebuild the program */
-		return new Rebuilder(code, funcs).rebuild(pass);
+		return new Rebuilder(code, funcs).rebuild(new RebuildConfig().adder(pass));
 	}
 
 	protected COFFObject applyWin32Hooks(Hooks hooks) {
@@ -68,7 +68,7 @@ public class Modify {
 		Map funcs = code.getCodeByFunction();
 
 		/* let's apply this pass and rebuild the program */
-		return new Rebuilder(code, funcs).rebuild(new Attach(code, hooks));
+		return new Rebuilder(code, funcs).rebuild(new RebuildConfig().adder(new Attach(code, hooks)));
 	}
 
 	protected COFFObject applyLocalHooks(Hooks hooks) {
@@ -83,7 +83,7 @@ public class Modify {
 
 		/* let's apply this pass and rebuild the program */
 		Redirect redir = new Redirect(code, hooks);
-		return new Rebuilder(code, funcs).rebuild(redir, redir);
+		return new Rebuilder(code, funcs).rebuild(new RebuildConfig().adder(redir).lookup(redir));
 	}
 
 	public COFFObject applyHooks(Exports exports, Hooks hooks) {
@@ -133,7 +133,7 @@ public class Modify {
 			pass.add(new FixX86References(code, retaddr));
 
 		/* let's apply this pass and rebuild the program */
-		return new Rebuilder(code, funcs).rebuild(pass);
+		return new Rebuilder(code, funcs).rebuild(new RebuildConfig().adder(pass));
 	}
 
 	/*
@@ -144,6 +144,13 @@ public class Modify {
 		if (options.size() == 0)
 			return object;
 
+		object = mutate_pass1(preserveFirst, exports, options);
+		object = mutate_pass2(preserveFirst, exports, options);
+
+		return object;
+	}
+
+	public COFFObject mutate_pass1(boolean preserveFirst, ExportInfo exports, Set options) {
 		/* let's analyze (disassemble) our code first */
 		Code code = Code.Init(object).analyze();
 
@@ -163,14 +170,34 @@ public class Modify {
 			funcs = new FunctionDisco(code).apply(preserveFirst, funcs);
 
 		/* rebuild the program */
-		if (options.contains("+mutate")) {
-			return new Rebuilder(code, funcs).rebuild(new Mutator(code));
-		}
-		else {
-			return new Rebuilder(code, funcs).rebuild();
-		}
+		RebuildConfig config = new RebuildConfig();
+
+		if (options.contains("+mutate"))
+			config.adder(new Mutator(code));
+
+		if (options.contains("+regdance"))
+			config.filter(new RegDance());
+
+		return new Rebuilder(code, funcs).rebuild(config);
 	}
 
+	public COFFObject mutate_pass2(boolean preserveFirst, ExportInfo exports, Set options) {
+		/* let's analyze (disassemble) our code first */
+		Code code = Code.Init(object).analyze();
+
+		/* get a mapping of function -> disassembled instructions */
+		Map funcs = code.getCodeByFunction();
+
+		/* rebuild the program */
+		RebuildConfig config = new RebuildConfig();
+
+		if (options.contains("+shatter"))
+			config.filter(new Shatter());
+		else if (options.contains("+blockparty"))
+			config.filter(new BlockParty());
+
+		return new Rebuilder(code, funcs).rebuild(config);
+	}
 
 	private static class MockExports implements ExportInfo {
 		public MockExports() {
@@ -183,7 +210,7 @@ public class Modify {
 
 	public static void main(String args[]) {
 		if (args.length == 0) {
-			CrystalUtils.print_error("./disassemble <+mutate,+optimize,+disco,+gofirst> [/path/to/file.o]");
+			CrystalUtils.print_error("./disassemble [+mutate,+optimize,+disco,+gofirst,+blockparty,+shatter] </path/to/file.o>");
 			return;
 		}
 

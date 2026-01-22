@@ -30,11 +30,15 @@ public class Attach extends BaseModify {
 	public void setupVerbs() {
 		if (x64) {
 			verbs.add(new MovRax());
+			verbs.add(new MovNotRax());
 			verbs.add(new Call64());
+			verbs.add(new Jmp64());
 		}
 		else {
 			verbs.add(new MovEax());
+			verbs.add(new MovNotEax());
 			verbs.add(new Call32());
+			verbs.add(new Jmp32());
 		}
 	}
 
@@ -50,7 +54,13 @@ public class Attach extends BaseModify {
 			return false;
 
 		/* check that our import is in MODULE$Function format or its GetProcAddress/LoadLibraryA */
-		resolveme.checkAndPopulateModule();
+		try {
+			resolveme.checkAndPopulateModule();
+		}
+		catch (RuntimeException rex) {
+			// swallow this exception, it means we don't know what this module is and for the purpose of
+			// attach... we don't really care. It just means we're likely not going to attach to it.
+		}
 
 		/* try to resolve a hook for this context */
 		hookfunc = hooks.getHook(step.getFunction(), resolveme.getTarget());
@@ -97,6 +107,53 @@ public class Attach extends BaseModify {
 		}
 	}
 
+	private class Jmp32 implements ModifyVerb {
+		public boolean check(String istr, Instruction next) {
+			return "JMP r/m32".equals(istr);
+		}
+
+		public void apply(CodeAssembler program, RebuildStep step, Instruction next) {
+			program.jmp(step.getLabel(hookfunc));
+			step.resolve();
+		}
+	}
+
+	private class Jmp64 implements ModifyVerb {
+		public boolean check(String istr, Instruction next) {
+			return "JMP r/m64".equals(istr);
+		}
+
+		public void apply(CodeAssembler program, RebuildStep step, Instruction next) {
+			program.jmp(step.getLabel(hookfunc));
+			step.resolve();
+		}
+	}
+
+	private class MovNotEax implements ModifyVerb {
+		public boolean check(String istr, Instruction next) {
+			return "MOV r32, r/m32".equals(istr);
+		}
+
+		public void apply(CodeAssembler program, RebuildStep step, Instruction next) {
+			/* get our hook function symbol */
+			Symbol temp = object.getSymbol(hookfunc);
+
+			/* move the constant for our hookfunc into %eax */
+			program.mov(new AsmRegister32(new ICRegister(next.getOp0Register())), 0);
+
+			/* make this work right */
+			step.setRelocOffset(1);
+
+			/* change the relocation symbol to .text, please */
+			step.getRelocation().setSymbolName(".text");
+
+			/* update the offset [from symbol] value stored with our relocation to be our hookfunc */
+			step.setRelocOffsetValue(temp.getValue());
+
+			/* The above works because our Rebuilder has a special case to fix .text offsets */
+		}
+	}
+
 	private class MovEax implements ModifyVerb {
 		public boolean check(String istr, Instruction next) {
 			return "MOV EAX, moffs32".equals(istr);
@@ -133,6 +190,17 @@ public class Attach extends BaseModify {
 
 				/* The above works because our Rebuilder has a special case to fix .text offsets */
 			}
+		}
+	}
+
+	private class MovNotRax implements ModifyVerb {
+		public boolean check(String istr, Instruction next) {
+			return "MOV r64, r/m64".equals(istr) && next.getOp0Register() != Register.RAX;
+		}
+
+		public void apply(CodeAssembler program, RebuildStep step, Instruction next) {
+			program.lea( new AsmRegister64(new ICRegister(next.getOp0Register())), AsmRegisters.mem_ptr(  step.getLabel(hookfunc)  ));
+			step.resolve();
 		}
 	}
 

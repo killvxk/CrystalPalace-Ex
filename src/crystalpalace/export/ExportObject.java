@@ -69,10 +69,16 @@ public class ExportObject {
 	 * feed that merged output to our disassembler. I'm largely OK with this.
 	 */
 	public void disassemble(File out) throws FileNotFoundException {
+		if (disasm_out != null)
+			throw new RuntimeException("disassemble is already defined");
+
 		disasm_out = new PrintStream(out);
 	}
 
 	public void coffparse(File out) throws FileNotFoundException {
+		if (coffpr_out != null)
+			throw new RuntimeException("coffparse is already defined");
+
 		coffpr_out = new PrintStream(out);
 	}
 

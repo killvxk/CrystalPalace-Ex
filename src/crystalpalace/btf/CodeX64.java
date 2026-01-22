@@ -1,5 +1,7 @@
 package crystalpalace.btf;
 
+import crystalpalace.btf.Code;
+
 import crystalpalace.coff.*;
 import crystalpalace.util.*;
 

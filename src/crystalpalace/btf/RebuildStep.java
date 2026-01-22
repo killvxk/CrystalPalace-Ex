@@ -1,5 +1,7 @@
 package crystalpalace.btf;
 
+import crystalpalace.btf.lttl.*;
+
 import com.github.icedland.iced.x86.*;
 import com.github.icedland.iced.x86.asm.*;
 import crystalpalace.coff.*;
@@ -26,10 +28,11 @@ public class RebuildStep {
 	public Instruction peekNext() {
 		Instruction next = null;
 
-		if (iterator.hasNext())
+		if (iterator.hasNext()) {
 			next = (Instruction)iterator.next();
+			iterator.previous();
+		}
 
-		iterator.previous();
 		return next;
 	}
 
@@ -45,6 +48,14 @@ public class RebuildStep {
 		return builder.getZones().isDangerous(instruction);
 	}
 
+	/*
+	 * Determine whether or not the current function is a "dirty" leaf function (e.g., rsp is NOT aligned
+	 * due to a compiler optimization)
+	 */
+	public boolean isDirty() {
+		return builder.getLeaves().isDirty(getFunction());
+	}
+
 	public void step(Instruction inst) {
 		instruction = inst;
 	}
@@ -57,23 +68,31 @@ public class RebuildStep {
 		return String.format("%016X %s", instruction.getIP(), instruction.getOpCode().toInstructionString());
 	}
 
+	public boolean isRelocDisplacement() {
+		return getRelocOffset() == builder.analysis.getOffsets(instruction).displacementOffset;
+	}
+
+	public boolean isRelocImmediate() {
+		return getRelocOffset() == builder.analysis.getOffsets(instruction).immediateOffset;
+	}
+
 	public int getRelocOffset() {
-		Rebuilder.RelocationFix fix = (Rebuilder.RelocationFix)builder.relocs.get(getRelocation());
+		RelocationFix fix = builder.getRelocations().get(getRelocation());
 		return fix.instOffset;
 	}
 
 	public void setRelocOffset(int x) {
-		Rebuilder.RelocationFix fix = (Rebuilder.RelocationFix)builder.relocs.get(getRelocation());
+		RelocationFix fix = builder.getRelocations().get(getRelocation());
 		fix.instOffset = x;
 	}
 
 	public void setRelocOffsetValue(long x) {
-		Rebuilder.RelocationFix fix = (Rebuilder.RelocationFix)builder.relocs.get(getRelocation());
+		RelocationFix fix = builder.getRelocations().get(getRelocation());
 		fix.setRelocOffsetValue(x);
 	}
 
 	public long getRelocOffsetValue() {
-		Rebuilder.RelocationFix fix = (Rebuilder.RelocationFix)builder.relocs.get(getRelocation());
+		RelocationFix fix = builder.getRelocations().get(getRelocation());
 		return fix.getRelocOffsetLong();
 	}
 
@@ -82,7 +101,7 @@ public class RebuildStep {
 		CodeLabel               label = program.createLabel();
 		program.label(label);
 		Relocation              reloc = new Relocation(builder.object.getSection(".text"), 0, ".text", Relocation.IMAGE_REL_I386_DIR32);
-		Rebuilder.RelocationFix fix   = builder.addRelocation(reloc, label, instOffset);
+		RelocationFix           fix   = builder.getRelocations().add(reloc, label, instOffset);
 		fix.setRelocOffsetValue(value.getValue());
 	}
 
@@ -90,7 +109,7 @@ public class RebuildStep {
 		CodeLabel label = program.createLabel();
 		program.label( label );
 
-		Rebuilder.RelocationFix fix = (Rebuilder.RelocationFix)builder.relocs.get(getRelocation());
+		RelocationFix fix = builder.getRelocations().get(getRelocation());
 		fix.label = label;
 	}
 
@@ -104,7 +123,7 @@ public class RebuildStep {
 
 	/* resolve the curret relocation (that is... remove it and mark it as done!) */
 	public void resolve() {
-		builder.relocs.remove(getRelocation());
+		builder.getRelocations().resolve(getRelocation());
 	}
 
 	public String getFunction() {
@@ -112,6 +131,6 @@ public class RebuildStep {
 	}
 
 	public CodeLabel getLabel(String func) {
-		return (CodeLabel)builder.labels.get(func);
+		return builder.labels.getLabel(func);
 	}
 }

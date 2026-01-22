@@ -1,5 +1,7 @@
-package crystalpalace.btf;
+package crystalpalace.btf.lttl;
 
+import crystalpalace.btf.*;
+import crystalpalace.btf.Code;
 import crystalpalace.coff.*;
 import crystalpalace.util.*;
 
@@ -123,5 +125,39 @@ public class Jumps implements CodeVisitor {
 			add(next);
 			//CodeUtils.details(analysis, "loopcc", next);
 		}
+	}
+
+	public void handleLabel(Instruction inst) {
+		try {
+			if (hasLabel(inst))
+				program.label( getLabel(inst) );
+		}
+		catch (IllegalArgumentException ex) {
+			throw new RuntimeException( "Can't label '" + String.format("%016X %s", inst.getIP(), inst.getOpCode().toInstructionString()) + "'. (a label already exists?)" );
+		}
+	}
+
+	public void process(RebuildStep state, Instruction inst, ResolveLabel lookup) {
+		/* This is a check to see if we have a 0-byte jump. If we do, let's optimize it out. That's what's going on here */
+		if (CodeUtils.is(inst, "JMP rel8") || CodeUtils.is(inst, "JMP rel32")) {
+			Instruction peek = state.peekNext();
+
+			if (peek != null && hasLabel(peek)) {
+				if (getJumpLabel(inst) == getLabel(peek)) {
+					//CrystalUtils.print_error("Found a redundant jump");
+					//CodeUtils.p(inst);
+					//CodeUtils.p(peek);
+
+					/* we're going to create an empty instruction to avoid a potential label conflict */
+					program.zero_bytes();
+
+					/* otherwise... swallow this specific jump instruction because we don't need it */
+					return;
+				}
+			}
+		}
+
+		/* add our instruction */
+		program.addInstruction( Instruction.createBranch(inst.getCode(), getJumpLabel(inst).id) );
 	}
 }

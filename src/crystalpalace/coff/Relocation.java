@@ -64,11 +64,25 @@ public class Relocation {
 		return _machine.equals( getSection().getObject().getMachine() ) && Type == _type;
 	}
 
+	public boolean isSection(String name) {
+		if (name.equals(SymbolName))
+			return true;
+
+		if (getRemoteSection() != null && getRemoteSection().getName().equals(name))
+			return true;
+
+		return false;
+	}
+
 	public Section getRemoteSection() {
 		if (getSymbol().isUndefinedSection())
 			return null;
 
 		return getSymbol().getSection();
+	}
+
+	public int getRemoteSectionOffset() {
+		return getOffsetAsLong() + (int)getSymbol().getValue();
 	}
 
 	public Section getSection() {

@@ -289,11 +289,15 @@ public abstract class BaseModify implements AddInstruction {
 	}
 
 	public AsmMemoryOperand getStackPtr() {
+		return getStackPtr(0);
+	}
+
+	public AsmMemoryOperand getStackPtr(int offset) {
 		if (x64) {
-			return AsmRegisters.mem_ptr(new AsmRegister64(ICRegisters.rsp), 0);
+			return AsmRegisters.mem_ptr(new AsmRegister64(ICRegisters.rsp), offset);
 		}
 		else {
-			return AsmRegisters.mem_ptr(new AsmRegister32(ICRegisters.esp), 0);
+			return AsmRegisters.mem_ptr(new AsmRegister32(ICRegisters.esp), offset);
 		}
 	}
 
@@ -342,6 +346,18 @@ public abstract class BaseModify implements AddInstruction {
 		return regs;
 	}
 
+	public void pushrax(CodeAssembler program) {
+		AsmRegister64 rax = new AsmRegister64(ICRegisters.rax);
+		program.push(rax);
+		program.push(rax);
+	}
+
+	public void poprax(CodeAssembler program) {
+		AsmRegister64 rax = new AsmRegister64(ICRegisters.rax);
+		program.pop(rax);
+		program.pop(rax);
+	}
+
 	public void stackAlloc(CodeAssembler program, int x) {
 		AsmRegister64 rsp = new AsmRegister64(ICRegisters.rsp);
 		program.sub(rsp, x);
@@ -377,10 +393,17 @@ public abstract class BaseModify implements AddInstruction {
 		AsmMemoryOperand   cand = null;
 
 		if (next.getMemoryIndex() == Register.NONE) {
-			if ("x64".equals(object.getMachine()))
-				cand = AsmRegisters.mem_ptr(new AsmRegister64(new ICRegister(next.getMemoryBase())), next.getMemoryDisplacement64());
-			else
-				cand = AsmRegisters.mem_ptr(new AsmRegister32(new ICRegister(next.getMemoryBase())), next.getMemoryDisplacement32());
+			try {
+				if ("x64".equals(object.getMachine()))
+					cand = AsmRegisters.mem_ptr(new AsmRegister64(new ICRegister(next.getMemoryBase())), next.getMemoryDisplacement64());
+				else
+					cand = AsmRegisters.mem_ptr(new AsmRegister32(new ICRegister(next.getMemoryBase())), next.getMemoryDisplacement32());
+			}
+			catch (IllegalArgumentException iae) {
+				CodeUtils.p(next);
+				CrystalUtils.handleException(iae);
+				return null;
+			}
 		}
 		else if (next.getMemoryIndex() != Register.NONE) {
 			/*

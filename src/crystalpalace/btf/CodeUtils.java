@@ -34,8 +34,171 @@ public class CodeUtils {
 		return String.format("%016X %s", instr.getIP(), instr.getOpCode().toInstructionString());
 	}
 
+	public static boolean is(Instruction instr, String form) {
+		return instr.getOpCode().toInstructionString().equals(form);
+	}
+
+	public static String f(Instruction instr) {
+		GasFormatter formatter = new GasFormatter();
+		formatter.getOptions().setDigitSeparator("`");
+		formatter.getOptions().setFirstOperandCharIndex(10);
+		formatter.getOptions().setGasSpaceAfterMemoryOperandComma​(true);
+
+		StringOutput output = new StringOutput();
+		formatter.format(instr, output);
+
+		return String.format("%016X %-32s %-20s", instr.getIP(), instr.getOpCode().toInstructionString(), output);
+	}
+
 	public static void p(Instruction instr) {
-		CrystalUtils.print_warn(String.format("%016X %s", instr.getIP(), instr.getOpCode().toInstructionString()));
+		CrystalUtils.print_warn(f(instr));
+	}
+
+	public static void p(RebuildStep step) {
+		if (step.hasRelocation()) {
+			CrystalUtils.print_warn(f(step.instruction) + " (" + step.getFunction() + ")\n\t" + step.getRelocation());
+		}
+		else {
+			CrystalUtils.print_warn(f(step.instruction) + " (" + step.getFunction() + ")");
+		}
+	}
+
+	public static String getRegString(AsmRegister32 reg) {
+		return getRegString(reg.get());
+	}
+
+	public static String getRegString(AsmRegister64 reg) {
+		return getRegString(reg.get());
+	}
+
+	public static String getRegString(ICRegister reg) {
+		return getRegString(reg.get());
+	}
+
+	public static String getRegString(Object reg) {
+		if (reg == null)
+			return "<null>";
+		else if (reg instanceof AsmRegister32)
+			return getRegString((AsmRegister32)reg);
+		else if (reg instanceof AsmRegister64)
+			return getRegString((AsmRegister64)reg);
+		else if (reg instanceof ICRegister)
+			return getRegString((ICRegister)reg);
+		else
+			return "getRegString? " + reg.getClass();
+	}
+
+	public static String getRegString(int reg) {
+		switch (reg) {
+			case Register.RAX:
+				return "%rax";
+			case Register.RCX:
+				return "%rcx";
+			case Register.RDX:
+				return "%rdx";
+			case Register.RBX:
+				return "%rbx";
+			case Register.RSI:
+				return "%rsi";
+			case Register.RDI:
+				return "%rdi";
+			case Register.RSP:
+				return "%rsp";
+			case Register.RBP:
+				return "%rbp";
+			case Register.RIP:
+				return "%rip";
+			case Register.R8:
+				return "%r8";
+			case Register.R9:
+				return "%r9";
+			case Register.R10:
+				return "%r10";
+			case Register.R11:
+				return "%r11";
+			case Register.R12:
+				return "%r12";
+			case Register.R13:
+				return "%r13";
+			case Register.R14:
+				return "%r14";
+			case Register.R15:
+				return "%r15";
+
+			case Register.EAX:
+				return "%eax";
+			case Register.ECX:
+				return "%ecx";
+			case Register.EDX:
+				return "%edx";
+			case Register.EBX:
+				return "%ebx";
+			case Register.ESI:
+				return "%esi";
+			case Register.EDI:
+				return "%edi";
+			case Register.ESP:
+				return "%esp";
+			case Register.EBP:
+				return "%ebp";
+			case Register.EIP:
+				return "%eip";
+			case Register.R8D:
+				return "%r8d";
+			case Register.R9D:
+				return "%r9d";
+			case Register.R10D:
+				return "%r10d";
+			case Register.R11D:
+				return "%r11d";
+			case Register.R12D:
+				return "%r12d";
+			case Register.R13D:
+				return "%r13d";
+			case Register.R14D:
+				return "%r14d";
+			case Register.R15D:
+				return "%r15d";
+
+			case Register.AX:
+				return "%ax";
+			case Register.CX:
+				return "%cx";
+			case Register.DX:
+				return "%dx";
+			case Register.BX:
+				return "%bx";
+			case Register.SI:
+				return "%si";
+			case Register.DI:
+				return "%di";
+			case Register.SP:
+				return "%sp";
+			case Register.BP:
+				return "%bp";
+			case Register.R8W:
+				return "%r8w";
+			case Register.R9W:
+				return "%r9w";
+			case Register.R10W:
+				return "%r10w";
+			case Register.R11W:
+				return "%r11w";
+			case Register.R12W:
+				return "%r12w";
+			case Register.R13W:
+				return "%r13w";
+			case Register.R14W:
+				return "%r14w";
+			case Register.R15W:
+				return "%r15w";
+
+
+			case Register.NONE:
+				return "NONE";
+		}
+
+		return "Uknown_" + reg;
 	}
 
 	public static void dump(Instruction instr) {
@@ -152,52 +315,5 @@ public class CodeUtils {
 
 	public static void print(Code code) {
 		print(code, code.getCode());
-	}
-
-	public static int compare(byte[] str1, byte[] str2, int a, int b) {
-		int count = 0;
-
-		while (true) {
-			if ((count + a) >= str1.length || (count + b) >= str2.length)
-				break;
-
-			if (str1[count + a] != str2[count + b])
-				break;
-
-			count++;
-		}
-
-		return count;
-	}
-
-	public static int lcs(byte[] str1, byte[] str2) {
-		int m   = str1.length;
-		int n   = str2.length;
-
-		int idxm   = 0;
-		int idxn   = 0;
-		int max    = 0;
-
-		int lens[][] = new int[m][n];
-
-		for (int x = 0; x < str1.length; x++) {
-			for (int y = 0; y < str2.length; y++) {
-				lens[x][y] = compare(str1, str2, x, y);
-			}
-		}
-
-		for (int x = 0; x < str1.length; x++) {
-			for (int y = 0; y < str2.length; y++) {
-				if (lens[x][y] >= max) {
-					idxm = x;
-					idxn = y;
-					max  = lens[x][y];
-				}
-			}
-		}
-
-		CrystalUtils.print_stat("Max LCS is: " + max + " @ indices " + String.format("%016X", idxm) + ", " + String.format("%016X", idxn));
-
-		return max;
 	}
 }
