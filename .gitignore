@@ -7,6 +7,9 @@ demo/*.o
 demo/*.dll
 demo/*.exe
 demo/*.bin
+lib*.zip
+*.dll
+*.o
 
 # IDE files
 .idea/
@@ -23,3 +26,6 @@ Thumbs.db
 
 # Claude Code
 CLAUDE.md
+nul
+.claude/settings.local.json
+out.txt
